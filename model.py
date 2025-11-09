@@ -86,3 +86,12 @@ def smote_oversampling(X, Y):
     X_res, Y_res = smote.fit_resample(X, Y)
     return X_res, Y_res
 
+df = load_health_data()
+df = encode_categorical_columns(df)
+X, Y = separate_features_and_target(df)
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+for train, test in skf.split(X, Y):
+    X_train, X_test = X[train], X[test]
+    Y_train, Y_test = Y[train], Y[test]
+    X_train, X_test = standardize_numeric_columns(pd.DataFrame(X_train, columns=df.columns[:-1]), pd.DataFrame(X_test, columns=df.columns[:-1]))
+    X_train, Y_train = smote_oversampling(X_train.values, Y_train)
