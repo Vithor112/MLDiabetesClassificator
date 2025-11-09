@@ -1,4 +1,5 @@
 import pandas as pd
+from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
 
 def load_health_data(file_path='diabd_dataset.csv'):
@@ -19,36 +20,69 @@ def load_health_data(file_path='diabd_dataset.csv'):
         print(f"Erro: Arquivo '{file_path}' não encontrado.")
         return None
 
-def preprocess_health_data(df, categorical_to_numerical : bool = False):
+
+
+def standardize_numeric_columns(train, test):
     """
-    Realiza pré-processamento básico com SMOTE, deve ser aplicado somente no conjunto de treino.
+    Padroniza as colunas numéricas usando z-score.
 
     Parâmetros:
-    df (pd.DataFrame): DataFrame contendo os dados
+    train (pd.DataFrame): Conjunto de dados de treinamento.
+    test (pd.DataFrame): Conjunto de dados de teste.
+    numeric_columns (list): Lista de nomes das colunas numéricas a serem padronizadas.
 
     Retorna:
-    pd.DataFrame: DataFrame pré-processado.
+    tuple: Conjuntos de dados de treinamento e teste com colunas numéricas padronizadas.
     """
-    if df is None:
-        return None
+    for col in ['pulse_rate', 'systolic_bp', 'diastolic_bp', 'glucose', 'height', 'weight', 'bmi']:
+        mean = train[col].mean()
+        std = train[col].std()
+        train[col] = (train[col] - mean) / std
+        test[col] = (test[col] - mean) / std
+    return train, test
     
-    # Padronizando colunas numéricas com zscore
-    cols_to_norm = ['pulse_rate', 'systolic_bp', 'diastolic_bp', 'glucose', 'height', 'weight', 'bmi']
-    df[cols_to_norm] = (df[cols_to_norm] - df[cols_to_norm].mean()) / df[cols_to_norm].std()
+def encode_categorical_columns(df):
+    """
+    Realiza one-hot encoding nas colunas categóricas.
 
-    # Mapeando categorias para valores numéricos
-    if categorical_to_numerical:
-        mapping = {'No': 0, 'Yes': 1}
-        df['diabetic'] = df['diabetic'].map(mapping)
-        mapping = {'Male': 0, 'Female': 1}  
-        df['gender'] = df['gender'].map(mapping)
+    Parâmetros:
+    df (pd.DataFrame): DataFrame contendo os dados.
 
-    X = df.drop(columns=['diabetic'])
-    Y = df['diabetic']
+    Retorna:
+    pd.DataFrame: DataFrame com colunas categóricas codificadas.
+    """
+    mapping = {'No': 0, 'Yes': 1}
+    df['diabetic'] = df['diabetic'].map(mapping)
+    mapping = {'Male': 0, 'Female': 1}  
+    df['gender'] = df['gender'].map(mapping)
+    return df
 
-    X_resampled, y_resampled = SMOTE().fit_resample(X, Y)
-    return (X_resampled, y_resampled)
+def separate_features_and_target(df):
+    """
+    Separa as features (X) e o target (Y) do DataFrame.
 
+    Parâmetros:
+    df (pd.DataFrame): DataFrame contendo os dados.
 
-df = load_health_data()
-x,y = preprocess_health_data(df, categorical_to_numerical=True)
+    Retorna:
+    tuple: Arrays numpy contendo as features (X) e o target (Y).
+    """
+    X = df.drop('diabetic', axis=1).values
+    Y = df['diabetic'].values
+    return X, Y
+
+def smote_oversampling(X, Y):
+    """
+    Aplica SMOTE para balancear o dataset. Deve ser aplicado somente no conjunto de treinamento.
+
+    Parâmetros:
+    X (np.ndarray): Features.
+    Y (np.ndarray): Target.
+
+    Retorna:
+    tuple: Arrays numpy contendo as features (X_res) e o target (Y_res) balanceados.
+    """
+    smote = SMOTE(random_state=42)
+    X_res, Y_res = smote.fit_resample(X, Y)
+    return X_res, Y_res
+
