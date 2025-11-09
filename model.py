@@ -95,3 +95,7 @@ for train, test in skf.split(X, Y):
     Y_train, Y_test = Y[train], Y[test]
     X_train, X_test = standardize_numeric_columns(pd.DataFrame(X_train, columns=df.columns[:-1]), pd.DataFrame(X_test, columns=df.columns[:-1]))
     X_train, Y_train = smote_oversampling(X_train.values, Y_train)
+    # TODO Realizar treinamento e avaliação do modelo aqui (Random forest, Nayve Bayes, Decision Tree com poda, Rede Neural, Regressão logistica, Knn (3,5,7 vizinhos))
+    # TODO calcular métricas de avalição do modelo (AUC Sensitivity Specificity Geometric_Mean Precision)
+    # TODO necessário salvar métricas em um arquivo .csv para análise posterior
+    # necessitamos ter varias metricas para cada modelo para calcular desvio padrão e média e significancia estatistica
