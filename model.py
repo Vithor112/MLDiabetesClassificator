@@ -34,7 +34,7 @@ def standardize_numeric_columns(train, test):
     Retorna:
     tuple: Conjuntos de dados de treinamento e teste com colunas numéricas padronizadas.
     """
-    for col in ['pulse_rate', 'systolic_bp', 'diastolic_bp', 'glucose', 'height', 'weight', 'bmi']:
+    for col in ['pulse_rate', 'pulse_pressure', 'glucose', 'bmi']:
         mean = train[col].mean()
         std = train[col].std()
         train[col] = (train[col] - mean) / std
@@ -86,8 +86,39 @@ def smote_oversampling(X, Y):
     X_res, Y_res = smote.fit_resample(X, Y)
     return X_res, Y_res
 
+def drop_unnecessary_columns(df):
+    """
+    Remove colunas desnecessárias do DataFrame.
+
+    Parâmetros:
+    df (pd.DataFrame): DataFrame contendo os dados.
+
+    Retorna:
+    pd.DataFrame: DataFrame com colunas desnecessárias removidas.
+    """
+    columns_to_drop = ['weight', 'height', 'systolic_bp', 'diastolic_bp']
+    df = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
+    return df
+
+def calculate_pulse_pressure(df):
+    """
+    Calcula a pressão de pulso e adiciona como uma nova coluna no DataFrame.
+
+    Parâmetros:
+    df (pd.DataFrame): DataFrame contendo os dados.
+
+    Retorna:
+    pd.DataFrame: DataFrame com a nova coluna 'pulse_pressure'.
+    """
+    pp_values = df['systolic_bp'] - df['diastolic_bp']
+    insert_loc = df.columns.get_loc('diastolic_bp') + 1
+    df.insert(insert_loc, 'pulse_pressure', pp_values)
+    return df
+
 df = load_health_data()
 df = encode_categorical_columns(df)
+df = calculate_pulse_pressure(df)
+df = drop_unnecessary_columns(df)
 X, Y = separate_features_and_target(df)
 skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 for train, test in skf.split(X, Y):
