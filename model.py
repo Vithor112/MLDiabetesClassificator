@@ -5,7 +5,7 @@ import os
 from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
 from sklearn.metrics import accuracy_score, classification_report, fbeta_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
 
 #models
 from sklearn.naive_bayes import GaussianNB
@@ -167,7 +167,7 @@ def train_and_evaluate_models(X_train, X_test, Y_train, Y_test):
     models = [
         ('GaussianNB', GaussianNB()),
         ('RandomForest', RandomForestClassifier(random_state=42)),
-        # DecisionTree será adicionado depois com poda
+        # DecisionTree será adicionada depois (com ou sem poda)
         ('LogisticRegression', LogisticRegression(max_iter=2000, random_state=42)),
         ('MLP', MLPClassifier(max_iter=1000, random_state=42)),
         ('KNN-3', KNeighborsClassifier(n_neighbors=3)),
@@ -175,47 +175,48 @@ def train_and_evaluate_models(X_train, X_test, Y_train, Y_test):
         ('KNN-7', KNeighborsClassifier(n_neighbors=7)),
     ]
 
-    # Decision Tree com seleção simples de ccp_alpha via split interno
+    # Decision Tree com seleção automática de ccp_alpha via cross-validation
     try:
         base_tree = DecisionTreeClassifier(random_state=42)
         base_tree.fit(X_train, Y_train)
+        # obtém os possíveis alphas do caminho de poda
         path = base_tree.cost_complexity_pruning_path(X_train, Y_train)
         alphas = [a for a in path.ccp_alphas if a > 0]
         chosen_alpha = 0.0
         if alphas:
-            # pequena validação interna para escolher alpha
-            X_tr, X_val, y_tr, y_val = train_test_split(X_train, Y_train, test_size=0.2, stratify=Y_train, random_state=42)
-            best_alpha = alphas[0]
-            best_acc = -1
-            # testar até 5 candidatos espaçados
+            # limitar o número de candidatos testados (melhora performance)
             candidates = np.linspace(min(alphas), max(alphas), min(len(alphas), 5))
+            best_alpha = candidates[0]
+            best_score = -1
+            # validação cruzada para cada alpha candidato
             for a in candidates:
                 clf_tmp = DecisionTreeClassifier(random_state=42, ccp_alpha=float(a))
-                clf_tmp.fit(X_tr, y_tr)
-                preds_val = clf_tmp.predict(X_val)
-                acc = accuracy_score(y_val, preds_val)
-                if acc > best_acc:
-                    best_acc = acc
+                scores = cross_val_score(clf_tmp, X_train, Y_train, cv=3)
+                mean_score = np.mean(scores)
+                if mean_score > best_score:
+                    best_score = mean_score
                     best_alpha = float(a)
+
             chosen_alpha = best_alpha
-
+        # define o modelo final com o alpha escolhido
         pruned_tree = DecisionTreeClassifier(random_state=42, ccp_alpha=chosen_alpha)
-        models.insert(2, ('DecisionTree-pruned', pruned_tree))
+        # nome dinâmico baseado no uso de poda
+        name_tree = 'DecisionTree-pruned' if chosen_alpha > 0 else 'DecisionTree'
+        models.insert(2, (name_tree, pruned_tree))
     except Exception as e:
-        # fallback: árvore padrão
+        print(f"Erro durante seleção de ccp_alpha: {e}")
         models.insert(2, ('DecisionTree', DecisionTreeClassifier(random_state=42)))
-
-    # treinar e mostrar relatório como no notebook
+    # treinar e avaliar todos os modelos
     models_results = []
     for name, clf in models:
         try:
             res = evaluate_models(clf, X_train, Y_train, X_test, Y_test)
-            # adicionar nome do modelo ao dicionário de métricas
             res['model'] = name
             models_results.append(res)
         except Exception as e:
             print(f"Erro treinando/avaliando {name}: {e}")
     return models_results
+
 
 def save_results_to_csv(models_results, repetition, fold, file_path='model_results.csv'):
     """
