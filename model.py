@@ -4,8 +4,10 @@ import csv
 import os
 from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
-from sklearn.metrics import accuracy_score, classification_report, fbeta_score
+from sklearn.metrics import accuracy_score, classification_report, fbeta_score, roc_auc_score
 from sklearn.model_selection import cross_val_score
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler
 
 #models
 from sklearn.naive_bayes import GaussianNB
@@ -35,24 +37,27 @@ def load_health_data(file_path='diabd_dataset.csv'):
 
 
 
-def standardize_numeric_columns(train, test):
+def standardize_numeric_columns(train, test, numeric_indices):
     """
-    Padroniza as colunas numéricas usando z-score.
+    Padroniza as colunas numéricas usando StandardScaler.
 
     Parâmetros:
-    train (pd.DataFrame): Conjunto de dados de treinamento.
-    test (pd.DataFrame): Conjunto de dados de teste.
-    numeric_columns (list): Lista de nomes das colunas numéricas a serem padronizadas.
-
+    train (array numpy): Conjunto de dados de treinamento.
+    test (array numpy): Conjunto de dados de teste.
+    numeric_indices (list): Lista de índices das colunas numéricas a serem padronizadas
     Retorna:
-    tuple: Conjuntos de dados de treinamento e teste com colunas numéricas padronizadas.
+    tuple: Conjuntos de dados de treinamento e teste com colunas numéricas padron
     """
-    for col in ['pulse_rate', 'pulse_pressure', 'glucose', 'bmi']:
-        mean = train[col].mean()
-        std = train[col].std()
-        train[col] = (train[col] - mean) / std
-        test[col] = (test[col] - mean) / std
-    return train, test
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', StandardScaler(), numeric_indices)
+        ],
+        remainder='passthrough'
+    )
+
+    X_train_scaled = preprocessor.fit_transform(train)
+    X_test_scaled = preprocessor.transform(test)
+    return (X_train_scaled, X_test_scaled)
     
 def encode_categorical_columns(df):
     """
@@ -149,12 +154,17 @@ def evaluate_models(clf, X_train, Y_train, X_test, Y_test):
     precision = report_dict.get('1', {}).get('precision', 0.0)
     recall = report_dict.get('1', {}).get('recall', 0.0)
     f2 = fbeta_score(Y_test, preds, beta=2, zero_division=0)
-
+    try:
+        probs = clf.predict_proba(X_test)[:, 1]
+        auc = roc_auc_score(Y_test, probs)
+    except AttributeError:
+        auc = 0.0 
     return {
-        'accuracy': accuracy,
+        'Accuracy': accuracy,
         'F2-Score': f2,
         'Precision': precision,
-        'Recall': recall
+        'Recall': recall,
+        'AUC': auc
     }
 
 def train_and_evaluate_models(X_train, X_test, Y_train, Y_test):
@@ -167,7 +177,6 @@ def train_and_evaluate_models(X_train, X_test, Y_train, Y_test):
     models = [
         ('GaussianNB', GaussianNB()),
         ('RandomForest', RandomForestClassifier(random_state=42)),
-        # DecisionTree será adicionada depois (com ou sem poda)
         ('LogisticRegression', LogisticRegression(max_iter=2000, random_state=42)),
         ('MLP', MLPClassifier(max_iter=1000, random_state=42)),
         ('KNN-3', KNeighborsClassifier(n_neighbors=3)),
@@ -175,16 +184,13 @@ def train_and_evaluate_models(X_train, X_test, Y_train, Y_test):
         ('KNN-7', KNeighborsClassifier(n_neighbors=7)),
     ]
 
-    # Decision Tree com seleção automática de ccp_alpha via cross-validation
     try:
         base_tree = DecisionTreeClassifier(random_state=42)
         base_tree.fit(X_train, Y_train)
-        # obtém os possíveis alphas do caminho de poda
         path = base_tree.cost_complexity_pruning_path(X_train, Y_train)
         alphas = [a for a in path.ccp_alphas if a > 0]
         chosen_alpha = 0.0
         if alphas:
-            # limitar o número de candidatos testados (melhora performance)
             candidates = np.linspace(min(alphas), max(alphas), min(len(alphas), 5))
             best_alpha = candidates[0]
             best_score = -1
@@ -211,7 +217,7 @@ def train_and_evaluate_models(X_train, X_test, Y_train, Y_test):
     for name, clf in models:
         try:
             res = evaluate_models(clf, X_train, Y_train, X_test, Y_test)
-            res['model'] = name
+            res['Model'] = name
             models_results.append(res)
         except Exception as e:
             print(f"Erro treinando/avaliando {name}: {e}")
@@ -219,35 +225,23 @@ def train_and_evaluate_models(X_train, X_test, Y_train, Y_test):
 
 
 def save_results_to_csv(models_results, repetition, fold, file_path='model_results.csv'):
-    """
-    Salva os resultados dos modelos em um arquivo CSV.
-
-    Parâmetros:
-    models_results (list): Lista de dicionários contendo os resultados dos modelos.
-    repetition (int): Número da repetição atual.
-    fold (int): Número do fold atual.
-    file_path (str): Caminho para o arquivo CSV onde os resultados serão salvos.
-    """
-
     try:
         file_exists = os.path.isfile(file_path)
         with open(file_path, mode='a', newline='') as file:
-            writer = csv.writer(file)
+            fieldnames = ['Model', 'Repetition', 'Fold', 'Accuracy', 'F2-Score', 'Precision', 'Recall', 'AUC']
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            
             if not file_exists:
-                writer.writerow(['Model', 'Repetition', 'Fold', 'Accuracy', 'F2-Score', 'Precision', 'Recall'])
+                writer.writeheader()
+            
             for result in models_results:
-                writer.writerow([
-                    result['model'],
-                    repetition,
-                    fold,
-                    result['accuracy'],
-                    result['F2-Score'],
-                    result['Precision'],
-                    result['Recall']
-                ])
-        print(f"Resultados salvos em {file_path}")
+                row = result.copy()
+                row['Repetition'] = repetition
+                row['Fold'] = fold
+                writer.writerow({k: row.get(k) for k in fieldnames})
+                
     except Exception as e:
-        print(f"Erro ao salvar resultados em {file_path}: {e}")
+        print(f"Erro ao salvar: {e}")
 
 REPETITION_COUNT = 10
 
@@ -255,20 +249,17 @@ df = load_health_data()
 df = encode_categorical_columns(df)
 df = calculate_pulse_pressure(df)
 df = drop_unnecessary_columns(df)
+target_numeric_cols = ['pulse_rate', 'glucose', 'bmi', 'pulse_pressure']
+numeric_col_indices = [df.columns.get_loc(c) for c in df if c in target_numeric_cols]
 X, Y = separate_features_and_target(df)
 for repetition in range(REPETITION_COUNT):
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    # enumerar os folds para passar o índice correto ao salvar
+    print("Repetition:", repetition + 1)
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42 + repetition)
     for fold_idx, (train, test) in enumerate(skf.split(X, Y), start=1):
         X_train, X_test = X[train], X[test]
         Y_train, Y_test = Y[train], Y[test]
-        X_train, X_test = standardize_numeric_columns(pd.DataFrame(X_train, columns=df.columns[:-1]), pd.DataFrame(X_test, columns=df.columns[:-1]))
-        X_train, Y_train = smote_oversampling(X_train.values, Y_train)
-
-        # Realizar treinamento e avaliação do modelo aqui (Random forest, Nayve Bayes, Decision Tree com poda, Rede Neural, Regressão logistica, Knn (3,5,7 vizinhos))
-        # TODO calcular métricas de avalição do modelo (AUC F2-Score precisão recall)
+        X_train, X_test = standardize_numeric_columns(X_train, X_test, numeric_col_indices)
+        X_train, Y_train = smote_oversampling(X_train, Y_train)
         models_results = train_and_evaluate_models(X_train, X_test, Y_train, Y_test)
-        # salvar métricas em um arquivo .csv para análise posterior
         save_results_to_csv(models_results, repetition, fold_idx)
-        # necessitamos ter varias metricas para cada modelo para calcular desvio padrão e média e significancia estatistica 
-        # TODO modelo header csv (Model, Repetition, Fold, AUC F2-Score, Precision, Recall)
+print("Processo concluído.")

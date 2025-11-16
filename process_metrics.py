@@ -27,7 +27,7 @@ def save_publication_figure(filename, dpi=300):
     print(f"Salvo {filename} (.png e .pdf)")
 
 
-def create_radar_chart(df, selected_models=['LogisticRegression', 'GaussianNB', 'MLP', 'RandomForest']):
+def create_radar_chart(df, selected_models=['LogisticRegression', 'GaussianNB', 'MLP']):
     categories_en = ['Accuracy', 'F2-Score', 'Precision', 'Recall', 'AUC']
     categories_pt = ['Acurácia', 'F2-Score', 'Precisão', 'Recall', 'AUC']
     
@@ -88,9 +88,7 @@ def create_radar_chart(df, selected_models=['LogisticRegression', 'GaussianNB', 
 
     plt.legend(loc='upper left', bbox_to_anchor=(1.1, 1.05), 
                title='Modelo', frameon=False)
-    
-    plt.title("Comparação de Desempenho do Modelo", y=1.12, fontweight='bold')
-    
+        
     save_publication_figure("Figura_3_Grafico_Radar_Melhorado")
     plt.close()
 
